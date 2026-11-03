@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="hi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style>
+<title>पार्किंग हिसाब</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Hind:wght@400;500;600&display=swap">
+<style id="sty">
+/* Layout: एक कॉलम "पार्किंग टिकट" — ऊपर हिसाब, फिर आज, कैलेंडर, पेमेंट, बैकअप. Road-sign blue + lane yellow on asphalt neutrals. */
+:root{
+  --bg:#eef0f3; --card:#ffffff; --fg:#1b2129; --muted:#5d6672; --line:#d5d9e0;
+  --sign:#1f5fbf; --sign-ink:#ffffff; --lane:#e0a800; --lane-soft:#fff4cc;
+  --park:#1f5fbf; --park-soft:#dbe7fb; --out:#8a94a1; --out-soft:#e3e7ec;
+  --due:#c0392b; --ok:#1e8a4c;
+  --display:"Baloo 2","Hind",system-ui,sans-serif;
+  --body:"Hind",system-ui,-apple-system,"Segoe UI","Noto Sans Devanagari",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12161c; --card:#1b2129; --fg:#e8ebef; --muted:#9aa3ae; --line:#2c3440;
+  --sign:#4d8ef0; --sign-ink:#0c1420; --lane:#f5c431; --lane-soft:#3a3214;
+  --park:#5b97f2; --park-soft:#1d2f4d; --out:#7d8794; --out-soft:#262d37;
+  --due:#ff7466; --ok:#4cc483; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12161c; --card:#1b2129; --fg:#e8ebef; --muted:#9aa3ae; --line:#2c3440;
+  --sign:#4d8ef0; --sign-ink:#0c1420; --lane:#f5c431; --lane-soft:#3a3214;
+  --park:#5b97f2; --park-soft:#1d2f4d; --out:#7d8794; --out-soft:#262d37;
+  --due:#ff7466; --ok:#4cc483; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.55}
+.wrap{max-width:640px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+header{display:flex;align-items:center;gap:12px}
+.p-sign{width:46px;height:46px;border-radius:8px;background:var(--sign);color:var(--sign-ink);font:700 30px/48px var(--display);text-align:center;flex:none}
+h1{font:700 28px/1.1 var(--display);margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:14px;margin:2px 0 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+h2{font:600 20px/1.2 var(--display);margin:0}
+.lbl{font-size:13px;color:var(--muted)}
+.num{font:600 26px/1.15 var(--display);font-variant-numeric:tabular-nums}
+.ticket{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ticket .top{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line)}
+.ticket .top>div{background:var(--card);padding:12px 14px;min-width:0}
+.ticket .due{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px;border-top:3px dashed var(--lane);flex-wrap:wrap}
+.due .num{font-size:38px}
+.due.owe .num{color:var(--due)} .due.clear .num{color:var(--ok)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:9px 14px;min-height:44px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--lane);outline-offset:2px}
+.btn-park{background:var(--park);color:var(--sign-ink);border-color:var(--park);font-weight:600}
+.btn-out{background:var(--out-soft);font-weight:600}
+.btn-ghost{background:transparent}
+.btn-danger{color:var(--due)}
+.on{outline:3px solid var(--lane);outline-offset:1px}
+.grow{flex:1 1 140px}
+.monthbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.monthbar .m{font:600 22px/1 var(--display)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal .wd{font-size:12px;color:var(--muted);text-align:center}
+.day{aspect-ratio:1;max-width:100%;min-height:0;padding:0;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font:600 18px/1 var(--display);font-variant-numeric:tabular-nums;background:var(--bg);border-color:transparent}
+.day small{font:500 10px/1 var(--body);margin-top:2px}
+.day.p{background:var(--park);color:var(--sign-ink)}
+.day.o{background:var(--out-soft);color:var(--muted)}
+.day.miss{border:1.5px dashed var(--lane)}
+.day.today{box-shadow:inset 0 0 0 2px var(--lane)}
+.day:disabled{opacity:.3;cursor:default}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+.mstats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.mstats>div{min-width:0}
+.mstats .num{font-size:22px}
+.warn{background:var(--lane-soft);border-radius:8px;padding:10px 12px;font-size:15px}
+.okmsg{background:var(--park-soft);border-radius:8px;padding:10px 12px;font-size:15px}
+form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+form .full{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted);min-width:0}
+input,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;min-height:44px;width:100%;min-width:0}
+.err{color:var(--due);font-size:14px;margin:0}
+.pay{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line);align-items:center;flex-wrap:wrap}
+.pay:first-child{border-top:0}
+.pay .amt{font:600 20px/1 var(--display);font-variant-numeric:tabular-nums;color:var(--ok)}
+.pay .meta{font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.chip{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;background:var(--park-soft);color:var(--fg);margin-right:6px;font-weight:600}
+.empty{color:var(--muted);font-size:15px;margin:0}
+.status{font-size:13px;text-align:center;padding:8px;border-radius:8px}
+.status.good{color:var(--ok)} .status.bad{background:var(--lane-soft);color:var(--fg)}
+textarea{font:14px/1.5 var(--body);width:100%;min-height:150px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:10px}
+details summary{cursor:pointer;font:600 20px/1.2 var(--display)}
+details[open] summary{margin-bottom:12px}
+@media (max-width:420px){.mstats{grid-template-columns:repeat(2,1fr)} .ticket .top .num{font-size:21px} form{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:no-preference){.day{transition:background .15s}}
+</style>
+
+</head><body>
+<div class="wrap" id="app"><header><div class="p-sign" aria-hidden="true">P</div><div><h1>पार्किंग हिसाब</h1><p class="sub">हर दिन का रिकॉर्ड, हर पेमेंट का सबूत</p></div></header><div class="card"><p class="empty">लोड हो रहा है…</p></div></div>
+
+<script type="application/json" id="state">{"v":2,"t":1793703409867,"rate":120,"name":"laxmi nagar","start":"","days":{"2026-11-03":{"s":"p","r":120},"2026-11-02":{"s":"p","r":120},"2026-11-01":{"s":"p","r":120},"2026-10-30":{"s":"p","r":120},"2026-10-31":{"s":"p","r":120}},"pays":[]}</script>
+<script id="main">
+(function(){
+"use strict";
+var LK='parking-hisaab-v1';
+var MN=['जनवरी','फ़रवरी','मार्च','अप्रैल','मई','जून','जुलाई','अगस्त','सितंबर','अक्टूबर','नवंबर','दिसंबर'];
+var WD=['रवि','सोम','मंगल','बुध','गुरु','शुक्र','शनि'];
+
+function blank(){return {v:2,t:0,rate:0,name:'',start:'',days:{},pays:[]}}
+function clean(o){
+  // पुराना या टूटा डेटा सुधार कर सही रूप में लाना
+  var s=blank(); if(!o||typeof o!=='object') return s;
+  s.t=+o.t||0; s.rate=Math.max(0,+o.rate||0); s.name=typeof o.name==='string'?o.name:'';
+  s.start=/^\d{4}-\d{2}-\d{2}$/.test(o.start||'')?o.start:'';
+  if(o.days&&typeof o.days==='object') for(var k in o.days){var x=o.days[k];
+    if(/^\d{4}-\d{2}-\d{2}$/.test(k)&&x&&(x.s==='p'||x.s==='o')) s.days[k]={s:x.s,r:Math.max(0,+x.r||0)};}
+  if(Array.isArray(o.pays)) o.pays.forEach(function(p,i){ if(p&&+p.a>0&&/^\d{4}-\d{2}-\d{2}$/.test(p.d||''))
+    s.pays.push({id:String(p.id||('p'+i+'_'+Date.now())),d:p.d,a:+p.a,m:String(p.m||'UPI'),ref:String(p.ref||''),note:String(p.note||'')});});
+  return s;
+}
+var embedded; try{embedded=clean(JSON.parse(document.getElementById('state').textContent))}catch(e){embedded=blank()}
+var S=embedded, localNewer=false;
+try{var L=clean(JSON.parse(localStorage.getItem(LK)||'null')); if(L.t>S.t){S=L;localNewer=true}}catch(e){}
+
+var art=null, dl=null, mode='wait'; // wait | cloud | local
+var saving=false, dirty=false, retried=false, pubTimer=null;
+var saveState={k:'', t:''};
+var flash=null, flashTimer=null, confirmDel=null, showCopy=false, showBackup=false, payErr='', restoreMsg='';
+var now=new Date(), view={y:now.getFullYear(),m:now.getMonth()};
+
+function pad(n){return (n<10?'0':'')+n}
+function ds(y,m,d){return y+'-'+pad(m+1)+'-'+pad(d)}
+function today(){var d=new Date();return ds(d.getFullYear(),d.getMonth(),d.getDate())}
+function rs(n){return '₹'+Math.round(n).toLocaleString('en-IN')}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function fmtD(k){var p=k.split('-');return (+p[2])+' '+MN[+p[1]-1]+' '+p[0]}
+
+function totals(){
+  var c=0,pd=0,od=0; for(var k in S.days){var x=S.days[k]; if(x.s==='p'){pd++;c+=x.r} else od++;}
+  var paid=0; S.pays.forEach(function(p){paid+=p.a});
+  return {charge:c,paid:paid,due:c-paid,pd:pd,od:od};
+}
+function monthInfo(y,m){
+  var n=new Date(y,m+1,0).getDate(), t=today(), r={p:[],o:[],miss:[],charge:0};
+  for(var d=1;d<=n;d++){var k=ds(y,m,d); if(k>t) break; if(S.start&&k<S.start) continue; var x=S.days[k];
+    if(x&&x.s==='p'){r.p.push(d);r.charge+=x.r} else if(x&&x.s==='o') r.o.push(d); else r.miss.push(d);}
+  return r;
+}
+function allMissing(){
+  if(!S.start) return 0; var c=0, d=new Date(S.start+'T00:00:00'), t=today();
+  for(var i=0;i<2000;i++){var k=ds(d.getFullYear(),d.getMonth(),d.getDate()); if(k>t) break; if(!S.days[k]) c++; d.setDate(d.getDate()+1);}
+  return c;
+}
+
+/* ---------- सेव ---------- */
+function writeLocal(){try{localStorage.setItem(LK,JSON.stringify(S));return true}catch(e){return false}}
+function save(){
+  S.t=Date.now(); var okLocal=writeLocal();
+  if(mode==='cloud'){dirty=true; saveState={k:'', t:'सेव हो रहा है…'}; schedule(900);}
+  else if(mode==='local'||mode==='wait'){ if(mode==='wait') dirty=true;
+    saveState=okLocal?{k:'good',t:'✓ इस फ़ोन में सेव हो गया'}:{k:'bad',t:'सेव नहीं हो पाया। नीचे "बैकअप" से तुरंत कॉपी कर लें।'}; }
+  render();
+}
+function schedule(ms){clearTimeout(pubTimer); pubTimer=setTimeout(publish,ms)}
+function publish(){
+  if(!art||mode!=='cloud'||!dirty) return;
+  if(saving){schedule(800);return}
+  saving=true; dirty=false;
+  art.publish(buildDoc()).then(function(){
+    saving=false; retried=false; saveState={k:'good',t:'✓ सेव हो गया'}; render();
+  }).catch(function(e){
+    saving=false; var c=(e&&e.code)||'upstream_error';
+    if(c==='conflict'){ saveState={k:'',t:'नया वर्ज़न लोड हो रहा है…'}; /* पेज खुद reload होगा; localStorage में नया डेटा है, वापस आकर फिर सेव होगा */ }
+    else if(c==='rate_limited'){ dirty=true; saveState={k:'',t:'थोड़ी देर में सेव होगा…'}; schedule(8000); }
+    else if(c==='upstream_error'&&!retried){ retried=true; dirty=true; saveState={k:'',t:'दोबारा सेव कर रहे हैं…'}; schedule(2000+Math.random()*2000); }
+    else if(c==='upstream_error'){ retried=false; dirty=true; saveState={k:'bad',t:'इंटरनेट/सर्वर की दिक्कत। डेटा इस फ़ोन में सुरक्षित है, अगले बदलाव पर फिर कोशिश होगी।'}; }
+    else { mode='local'; saveState={k:'bad',t:'यहाँ से ऑनलाइन सेव नहीं हो सकता, डेटा सिर्फ़ इस फ़ोन में है। बैकअप ज़रूर रखें।'}; }
+    render();
+  });
+}
+function buildDoc(){
+  var st=document.getElementById('sty').textContent, js=document.getElementById('main').textContent;
+  var json=JSON.stringify(S).replace(/</g,'\\u003c'), SC='scr'+'ipt';
+  return '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>'
+   +'<title>पार्किंग हिसाब</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n'
+   +'<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Hind:wght@400;500;600&display=swap">\n'
+   +'<style id="sty">'+st+'</style>\n'
+   +'<div class="wrap" id="app"><header><div class="p-sign" aria-hidden="true">P</div><div><h1>पार्किंग हिसाब</h1><p class="sub">हर दिन का रिकॉर्ड, हर पेमेंट का सबूत</p></div></header><div class="card"><p class="empty">लोड हो रहा है…</p></div></div>\n'
+   +'<'+SC+' type="application/json" id="state">'+json+'</'+SC+'>\n<'+SC+' id="main">'+js+'</'+SC+'>\n</body></html>';
+}
+
+/* ---------- काम ---------- */
+function say(t,kind){flash={t:t,k:kind||'ok'}; clearTimeout(flashTimer); flashTimer=setTimeout(function(){flash=null;render()},3500); render()}
+function setDay(k,s){
+  if(!S.rate){say('पहले ऊपर "रोज़ का रेट" भरें, फिर दिन मार्क करें।','warn');var r=document.getElementById('rate');r&&r.focus();return}
+  if(k>today()) return;
+  if(!s) delete S.days[k]; else S.days[k]={s:s,r:S.rate};
+  save();
+}
+function cycle(k){var x=S.days[k]; setDay(k,!x?'p':x.s==='p'?'o':null)}
+
+function copyText(){
+  var mi=monthInfo(view.y,view.m), T=totals(), mk=view.y+'-'+pad(view.m+1);
+  var L=['🅿️ पार्किंग हिसाब – '+MN[view.m]+' '+view.y];
+  if(S.name) L.push('पार्किंग: '+S.name);
+  L.push('रेट: '+rs(S.rate)+' प्रति दिन','',
+   'कार खड़ी रही ('+mi.p.length+' दिन): '+(mi.p.join(', ')||'—'),
+   'कार नहीं थी ('+mi.o.length+' दिन): '+(mi.o.join(', ')||'—'),
+   'इस महीने का चार्ज: '+rs(mi.charge),'','इस महीने के पेमेंट:');
+  var ps=S.pays.filter(function(p){return p.d.indexOf(mk)===0}).sort(function(a,b){return a.d<b.d?-1:1});
+  if(!ps.length) L.push('—');
+  ps.forEach(function(p){L.push('• '+fmtD(p.d)+' – '+rs(p.a)+' '+p.m+(p.ref?(' (Ref: '+p.ref+')'):''))});
+  L.push('','अब तक कुल चार्ज: '+rs(T.charge),'अब तक कुल दिया: '+rs(T.paid), T.due>=0?('बाकी: '+rs(T.due)):('एडवांस दिया हुआ: '+rs(-T.due)));
+  return L.join('\n');
+}
+function copyToClip(txt,okMsg,areaId){
+  var done=function(){say(okMsg)}, fail=function(){say('अपने-आप कॉपी नहीं हुआ। नीचे का टेक्स्ट दबाकर रखें और कॉपी करें।','warn');var a=document.getElementById(areaId);if(a){a.focus();a.select()}};
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,fail); else fail(); }catch(e){fail()}
+}
+function restoreFrom(text){
+  var o; try{o=JSON.parse(text)}catch(e){restoreMsg='यह बैकअप सही नहीं है। पूरा टेक्स्ट (शुरू से आख़िर तक) पेस्ट करें।';render();return}
+  var c=clean(o); if(!c.rate&&!Object.keys(c.days).length&&!c.pays.length){restoreMsg='इस बैकअप में कोई रिकॉर्ड नहीं मिला।';render();return}
+  S=c; restoreMsg=''; showBackup=false; save(); say('बैकअप वापस आ गया: '+Object.keys(S.days).length+' दिन, '+S.pays.length+' पेमेंट।');
+}
+
+/* ---------- दिखाना ---------- */
+function render(){
+  var T=totals(), t=today(), mi=monthInfo(view.y,view.m), tx=S.days[t];
+  var h='<header><div class="p-sign" aria-hidden="true">P</div><div><h1>पार्किंग हिसाब</h1><p class="sub">हर दिन का रिकॉर्ड, हर पेमेंट का सबूत</p></div></header>';
+  if(flash) h+='<div class="'+(flash.k==='warn'?'warn':'okmsg')+'" role="status">'+esc(flash.t)+'</div>';
+
+  h+='<section class="ticket" aria-label="कुल हिसाब"><div class="top">'
+   +'<div><div class="lbl">खड़ी रही (दिन)</div><div class="num">'+T.pd+'</div></div>'
+   +'<div><div class="lbl">कुल चार्ज</div><div class="num">'+rs(T.charge)+'</div></div>'
+   +'<div><div class="lbl">कुल दिया</div><div class="num">'+rs(T.paid)+'</div></div></div>'
+   +'<div class="due '+(T.due>0?'owe':'clear')+'"><div><div class="lbl">'+(T.due>0?'अभी बाकी है':T.due<0?'एडवांस दिया हुआ':'हिसाब बराबर')+'</div><div class="num">'+rs(Math.abs(T.due))+'</div></div>'
+   +'<div class="lbl" style="text-align:right">'+(S.rate?('रेट '+rs(S.rate)+'/दिन'):'रेट अभी नहीं भरा')+'</div></div></section>';
+
+  if(!S.rate) h+='<div class="warn"><b>शुरू करें:</b> नीचे रोज़ का रेट और कब से पार्किंग ली, ये भरें। फिर रोज़ एक बटन दबाना है।</div>';
+
+  h+='<section class="card"><h2>सेटिंग</h2><div class="row">'
+   +'<label class="grow">रोज़ का रेट (₹)<input id="rate" type="number" inputmode="numeric" min="0" step="1" value="'+(S.rate||'')+'" placeholder="जैसे 100"></label>'
+   +'<label class="grow">कब से पार्किंग ली<input id="start" type="date" max="'+t+'" value="'+S.start+'"></label></div>'
+   +'<label>पार्किंग वाले का नाम / जगह<input id="pname" maxlength="80" value="'+esc(S.name)+'" placeholder="जैसे रमेश जी, सेक्टर 12"></label>'
+   +'<p class="sub" style="margin:0">रेट बदलने पर पुराने दिन पुराने रेट से ही गिने जाते हैं।</p></section>';
+
+  h+='<section class="card"><h2>आज – '+fmtD(t)+'</h2><p class="sub" style="margin:0">'+(tx?(tx.s==='p'?'आज का रिकॉर्ड: कार खड़ी है ✓':'आज का रिकॉर्ड: कार बाहर है ✓'):'आज का रिकॉर्ड अभी नहीं भरा')+'</p>'
+   +'<div class="row"><button class="btn-park grow'+(tx&&tx.s==='p'?' on':'')+'" data-today="p">🚗 कार खड़ी है</button><button class="btn-out grow'+(tx&&tx.s==='o'?' on':'')+'" data-today="o">कार बाहर है</button></div></section>';
+
+  var first=new Date(view.y,view.m,1).getDay(), n=new Date(view.y,view.m+1,0).getDate();
+  var isCur=(view.y===now.getFullYear()&&view.m===now.getMonth());
+  h+='<section class="card"><div class="monthbar"><button class="btn-ghost" data-nav="-1" aria-label="पिछला महीना">‹ पिछला</button><span class="m">'+MN[view.m]+' '+view.y+'</span><button class="btn-ghost" data-nav="1" aria-label="अगला महीना"'+(isCur?' disabled':'')+'>अगला ›</button></div>'
+   +'<div class="cal">'+WD.map(function(w){return '<div class="wd">'+w+'</div>'}).join('');
+  for(var i=0;i<first;i++) h+='<div></div>';
+  for(var d=1;d<=n;d++){var k=ds(view.y,view.m,d), x=S.days[k], off=k>t||(S.start&&k<S.start&&!x);
+    var cls='day'+(x?' '+x.s:(off?'':' miss'))+(k===t?' today':''), tag=x?(x.s==='p'?'खड़ी':'बाहर'):'';
+    h+='<button class="'+cls+'" data-day="'+k+'"'+(off?' disabled':'')+' aria-label="'+fmtD(k)+': '+(tag||'रिकॉर्ड नहीं')+'">'+d+(tag?'<small>'+tag+'</small>':'')+'</button>';}
+  h+='</div><div class="legend"><span><i style="background:var(--park)"></i>खड़ी (चार्ज लगेगा)</span><span><i style="background:var(--out-soft)"></i>बाहर (चार्ज नहीं)</span><span><i style="border:1.5px dashed var(--lane)"></i>रिकॉर्ड नहीं</span></div>'
+   +'<p class="sub" style="margin:0">किसी दिन पर टैप करें: खड़ी → बाहर → खाली।</p>'
+   +'<div class="mstats"><div><div class="lbl">खड़ी</div><div class="num">'+mi.p.length+'</div></div><div><div class="lbl">बाहर</div><div class="num">'+mi.o.length+'</div></div><div><div class="lbl">रिकॉर्ड नहीं</div><div class="num">'+mi.miss.length+'</div></div><div><div class="lbl">महीने का चार्ज</div><div class="num">'+rs(mi.charge)+'</div></div></div>';
+  if(S.rate&&mi.miss.length) h+='<div class="warn">इस महीने '+mi.miss.length+' दिन का रिकॉर्ड नहीं है ('+mi.miss.join(', ')+')। इन्हें भर दें, वरना झगड़े में सबूत नहीं रहेगा।</div>';
+  var am=allMissing(); if(S.rate&&am>mi.miss.length) h+='<div class="warn">शुरू से अब तक कुल '+am+' दिन का रिकॉर्ड खाली है। पिछले महीने भी देखें।</div>';
+  h+='<button id="copyBtn">📋 WhatsApp के लिए हिसाब कॉपी करें</button>';
+  if(showCopy) h+='<textarea id="copyArea" readonly aria-label="हिसाब का टेक्स्ट">'+esc(copyText())+'</textarea>';
+  h+='</section>';
+
+  h+='<section class="card"><h2>पेमेंट जोड़ें</h2><form id="payForm" novalidate>'
+   +'<label>तारीख़<input id="pd" type="date" value="'+t+'" max="'+t+'"></label>'
+   +'<label>रकम (₹)<input id="pa" type="number" inputmode="numeric" min="1" step="1" placeholder="जैसे 500"></label>'
+   +'<label>कैसे दिया<select id="pm"><option value="UPI">UPI</option><option value="कैश">कैश</option><option value="बैंक">बैंक</option></select></label>'
+   +'<label>UPI / ट्रांज़ैक्शन नंबर<input id="pr" maxlength="40" placeholder="सबूत के लिए"></label>'
+   +'<label class="full">नोट (ज़रूरी नहीं)<input id="pn" maxlength="80" placeholder="जैसे 1–15 नवंबर का"></label>'
+   +(payErr?'<p class="err full" role="alert">'+esc(payErr)+'</p>':'')
+   +'<button class="btn-park full" type="submit">पेमेंट सेव करें</button></form>'
+   +'<p class="sub" style="margin:0">कैश दिया हो तो उसी समय पार्किंग वाले को WhatsApp कर दें: "आज ₹___ कैश दिया"। वही सबूत है।</p></section>';
+
+  h+='<section class="card"><h2>पेमेंट हिस्ट्री</h2><div>';
+  var ps=S.pays.slice().sort(function(a,b){return a.d<b.d?1:a.d>b.d?-1:(a.id<b.id?1:-1)});
+  if(!ps.length) h+='<p class="empty">अभी कोई पेमेंट नहीं जोड़ा। जब भी पैसे दें, ऊपर जोड़ दें।</p>';
+  ps.forEach(function(p){h+='<div class="pay"><div style="min-width:0"><div><span class="chip">'+esc(p.m)+'</span>'+fmtD(p.d)+'</div><div class="meta">'+(p.ref?'Ref: '+esc(p.ref):'')+(p.ref&&p.note?' · ':'')+esc(p.note)+'</div></div>'
+    +'<div class="row" style="flex:none"><span class="amt">'+rs(p.a)+'</span><button class="btn-ghost'+(confirmDel===p.id?' btn-danger':'')+'" data-del="'+esc(p.id)+'">'+(confirmDel===p.id?'पक्का हटाएँ?':'हटाएँ')+'</button>'+(confirmDel===p.id?'<button class="btn-ghost" data-cancel="1">रहने दें</button>':'')+'</div></div>'});
+  h+='</div></section>';
+
+  h+='<section class="card"><details id="bk"'+(showBackup?' open':'')+'><summary>बैकअप (डेटा सुरक्षित रखें)</summary><div style="display:flex;flex-direction:column;gap:10px">'
+   +'<p class="sub" style="margin:0">महीने में एक बार बैकअप फ़ाइल सेव कर लें या टेक्स्ट कॉपी करके अपने WhatsApp पर भेज दें।</p>'
+   +'<div class="row">'+(dl?'<button class="grow" id="dlBtn">⬇️ बैकअप फ़ाइल सेव करें</button>':'')+'<button class="grow" id="bkCopy">बैकअप टेक्स्ट कॉपी करें</button></div>'
+   +'<textarea id="bkArea" readonly aria-label="बैकअप टेक्स्ट">'+esc(JSON.stringify(S))+'</textarea>'
+   +'<h2 style="font-size:17px">बैकअप से वापस लाएँ</h2>'
+   +'<label>बैकअप फ़ाइल चुनें<input id="bkFile" type="file" accept=".json,application/json,text/plain"></label>'
+   +'<label>या बैकअप टेक्स्ट यहाँ पेस्ट करें<textarea id="bkIn" placeholder="{&quot;v&quot;:2, ...}"></textarea></label>'
+   +(restoreMsg?'<p class="err" role="alert">'+esc(restoreMsg)+'</p>':'')
+   +'<button id="bkRestore">वापस लाएँ (अभी का डेटा बदल जाएगा)</button></div></details></section>';
+
+  var stTxt=saveState.t||(mode==='cloud'?'हर बदलाव अपने-आप सेव होता है':mode==='wait'?'':'डेटा इसी फ़ोन में सेव होता है। महीने में एक बार बैकअप फ़ाइल ज़रूर लें।');
+  if(stTxt) h+='<p class="status '+(saveState.k||'')+'" role="status">'+esc(stTxt)+'</p>';
+
+  var app=document.getElementById('app'), ae=document.activeElement, aid=ae&&ae.id, keep={};
+  ['pd','pa','pm','pr','pn','bkIn'].forEach(function(id){var el=document.getElementById(id); if(el) keep[id]=el.value});
+  var sc=window.scrollY;
+  app.innerHTML=h;
+  for(var id in keep){var el=document.getElementById(id); if(el&&keep[id]!=null&&!(id==='pd'&&!keep[id])) el.value=keep[id];}
+  if(aid){var f=document.getElementById(aid); if(f&&(f.tagName==='INPUT'||f.tagName==='TEXTAREA'||f.tagName==='SELECT')) try{f.focus({preventScroll:true})}catch(e){}}
+  window.scrollTo(0,sc);
+}
+
+/* ---------- इवेंट ---------- */
+document.addEventListener('click',function(e){
+  var b=e.target.closest('button'); if(!b||b.disabled) return;
+  if(b.dataset.day){cycle(b.dataset.day)}
+  else if(b.dataset.today){var k=today(), x=S.days[k]; setDay(k,(x&&x.s===b.dataset.today)?null:b.dataset.today)}
+  else if(b.dataset.nav){view.m+=+b.dataset.nav; if(view.m<0){view.m=11;view.y--} if(view.m>11){view.m=0;view.y++} showCopy=false; render()}
+  else if(b.dataset.cancel){confirmDel=null;render()}
+  else if(b.dataset.del){var id=b.dataset.del; if(confirmDel===id){S.pays=S.pays.filter(function(p){return p.id!==id});confirmDel=null;save();say('पेमेंट हटा दिया।')} else {confirmDel=id;render()}}
+  else if(b.id==='copyBtn'){if(!S.rate){say('पहले रोज़ का रेट भरें।','warn');return} showCopy=true; var txt=copyText(); render(); copyToClip(txt,'हिसाब कॉपी हो गया। WhatsApp पर पेस्ट करके भेज दें।','copyArea')}
+  else if(b.id==='bkCopy'){showBackup=true; render(); copyToClip(JSON.stringify(S),'बैकअप कॉपी हो गया। इसे अपने WhatsApp/नोट्स में सेव कर लें।','bkArea')}
+  else if(b.id==='dlBtn'&&dl){dl.save({filename:'parking-hisaab-backup-'+today()+'.json',data:JSON.stringify(S,null,1)}).then(function(){say('बैकअप फ़ाइल सेव हो गई।')},function(err){var c=err&&err.code; if(c==='declined') return; if(c==='rate_limited'){say('थोड़ी देर बाद फिर दबाएँ।','warn');return} dl=null; say('यहाँ फ़ाइल सेव नहीं हो सकती। "बैकअप टेक्स्ट कॉपी करें" इस्तेमाल करें।','warn')})}
+  else if(b.id==='bkRestore'){showBackup=true; var v=(document.getElementById('bkIn')||{}).value||''; if(!v.trim()){restoreMsg='पहले बैकअप फ़ाइल चुनें या टेक्स्ट पेस्ट करें।';render();return} restoreFrom(v.trim())}
+});
+document.addEventListener('toggle',function(e){if(e.target.id==='bk') showBackup=e.target.open},true);
+document.addEventListener('change',function(e){
+  var id=e.target.id;
+  if(id==='rate'){var r=Math.round(+e.target.value); if(!(r>=0)||r>100000){say('रेट सही नहीं है।','warn');render();return} S.rate=r; save()}
+  else if(id==='start'){var v=e.target.value; if(v&&v>today()){say('आगे की तारीख़ नहीं चुन सकते।','warn');render();return} S.start=v; save()}
+  else if(id==='pname'){S.name=e.target.value.trim().slice(0,80); save()}
+  else if(id==='bkFile'){var f=e.target.files&&e.target.files[0]; if(!f) return; if(f.size>2e6){restoreMsg='फ़ाइल बहुत बड़ी है, यह बैकअप फ़ाइल नहीं लगती।';render();return}
+    var rd=new FileReader(); rd.onload=function(){showBackup=true; var ta=document.getElementById('bkIn'); if(ta) ta.value=String(rd.result||''); restoreMsg=''; say('फ़ाइल लोड हो गई। अब "वापस लाएँ" दबाएँ।')}; rd.onerror=function(){restoreMsg='फ़ाइल पढ़ी नहीं जा सकी।';render()}; rd.readAsText(f)}
+});
+document.addEventListener('submit',function(e){
+  if(e.target.id!=='payForm') return; e.preventDefault();
+  var d=document.getElementById('pd').value, a=Math.round(+document.getElementById('pa').value);
+  if(!d){payErr='तारीख़ चुनें।';render();return}
+  if(d>today()){payErr='आगे की तारीख़ का पेमेंट नहीं जोड़ सकते।';render();return}
+  if(!(a>0)){payErr='रकम भरें (₹1 या ज़्यादा)।';render();var x=document.getElementById('pa');x&&x.focus();return}
+  if(a>1000000){payErr='रकम बहुत ज़्यादा है, दोबारा जाँचें।';render();return}
+  payErr='';
+  S.pays.push({id:'p'+Date.now()+Math.floor(Math.random()*1000),d:d,a:a,m:document.getElementById('pm').value,ref:document.getElementById('pr').value.trim().slice(0,40),note:document.getElementById('pn').value.trim().slice(0,80)});
+  ['pa','pr','pn'].forEach(function(id){var x=document.getElementById(id); if(x) x.value=''});
+  save(); say('पेमेंट सेव हो गया: '+rs(a)+' ('+fmtD(d)+')');
+});
+
+/* रात 12 बजे के बाद "आज" अपडेट हो */
+setInterval(function(){var n2=new Date(); if(n2.getDate()!==now.getDate()){var wasCur=view.y===now.getFullYear()&&view.m===now.getMonth(); now=n2; if(wasCur){view.y=now.getFullYear();view.m=now.getMonth()} render()}},60000);
+
+render();
+mode='local';
+dl={save:function(o){return new Promise(function(res,rej){try{var b=new Blob([o.data],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=o.filename;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove()},1500);res()}catch(e){rej({code:'unavailable'})}})}};
+render();
+})();
+</script>
+
+</body></html>
