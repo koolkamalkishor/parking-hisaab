@@ -90,7 +90,73 @@ details[open] summary{margin-bottom:12px}
 </head><body>
 <div class="wrap" id="app"><header><div class="p-sign" aria-hidden="true">P</div><div><h1>पार्किंग हिसाब</h1><p class="sub">हर दिन का रिकॉर्ड, हर पेमेंट का सबूत</p></div></header><div class="card"><p class="empty">लोड हो रहा है…</p></div></div>
 
-<script type="application/json" id="state">{"v":2,"t":1793703409867,"rate":120,"name":"laxmi nagar","start":"","days":{"2026-11-03":{"s":"p","r":120},"2026-11-02":{"s":"p","r":120},"2026-11-01":{"s":"p","r":120},"2026-10-30":{"s":"p","r":120},"2026-10-31":{"s":"p","r":120}},"pays":[]}</script>
+<script type="application/json" id="state">{"v":2,"t":0,"rate":0,"name":"","start":"","days":{},"pays":[]}</script>
+<script type="text/plain" id="gscode">// पार्किंग हिसाब – Google Sheet बैकअप
+// नीचे PIN बदलकर अपना कोई नंबर/शब्द रखें। यही PIN ऐप में डालना है।
+const PIN = 'अपना-PIN-यहाँ';
+
+function doPost(e) {
+  var req;
+  try { req = JSON.parse(e.postData.contents); } catch (err) { return out({ok:false, err:'bad'}); }
+  if (String(req.key) !== String(PIN)) return out({ok:false, err:'key'});
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (req.action === 'get') return out({ok:true, data: readData(ss)});
+  if (req.action === 'put' &amp;&amp; req.data &amp;&amp; typeof req.data === 'object') {
+    var lock = LockService.getScriptLock(); lock.waitLock(20000);
+    try {
+      var cur = readData(ss);
+      if (cur &amp;&amp; (+cur.t || 0) > (+req.data.t || 0)) return out({ok:true, stale:true, data:cur});
+      writeViews(ss, req.data);
+      writeData(ss, req.data);
+      return out({ok:true});
+    } finally { lock.releaseLock(); }
+  }
+  return out({ok:false, err:'bad'});
+}
+function doGet() { return out({ok:true, app:'parking-hisaab'}); }
+function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+function sheet(ss, name) { return ss.getSheetByName(name) || ss.insertSheet(name); }
+function safe(v) { v = String(v == null ? '' : v); return /^[=+\-@]/.test(v) ? "'" + v : v; }
+function readData(ss) {
+  var sh = ss.getSheetByName('_data');
+  if (!sh || sh.getLastRow() &lt; 1) return null;
+  var txt = sh.getRange(1, 1, sh.getLastRow(), 1).getValues().map(function (r) { return String(r[0]).slice(1); }).join('');
+  try { return JSON.parse(txt); } catch (err) { return null; }
+}
+function writeData(ss, data) {
+  var sh = sheet(ss, '_data'); sh.clear();
+  var txt = JSON.stringify(data), rows = [];
+  for (var i = 0; i &lt; txt.length; i += 40000) rows.push(['x' + txt.slice(i, i + 40000)]);
+  sh.getRange(1, 1, rows.length, 1).setValues(rows);
+  if (!sh.isSheetHidden()) sh.hideSheet();
+}
+function writeViews(ss, d) {
+  var days = d.days || {}, keys = Object.keys(days).sort(), pays = (d.pays || []).slice();
+  pays.sort(function (a, b) { return a.d &lt; b.d ? -1 : 1; });
+  var c = 0, pd = 0, od = 0, paid = 0;
+  keys.forEach(function (k) { if (days[k].s === 'p') { pd++; c += +days[k].r || 0; } else od++; });
+  pays.forEach(function (p) { paid += +p.a || 0; });
+
+  var s = sheet(ss, 'हिसाब'); s.clear();
+  s.getRange(1, 1, 8, 2).setValues([
+    ['पार्किंग', safe(d.name)], ['रोज़ का रेट (₹)', +d.rate || 0], ['कब से', safe(d.start)],
+    ['कार खड़ी रही (दिन)', pd], ['कार बाहर (दिन)', od], ['कुल चार्ज (₹)', c], ['कुल दिया (₹)', paid],
+    [c - paid >= 0 ? 'बाकी (₹)' : 'एडवांस (₹)', Math.abs(c - paid)]]);
+  s.getRange(10, 1, 1, 2).setValues([['आख़िरी अपडेट', new Date()]]);
+
+  var r = sheet(ss, 'रोज़ का रिकॉर्ड'); r.clear();
+  var dr = [['तारीख़', 'स्थिति', 'चार्ज (₹)']].concat(keys.map(function (k) {
+    return [k, days[k].s === 'p' ? 'खड़ी' : 'बाहर', days[k].s === 'p' ? (+days[k].r || 0) : 0]; }));
+  r.getRange(1, 1, dr.length, 3).setNumberFormat('@').setValues(dr);
+  r.getRange(1, 3, dr.length, 1).setNumberFormat('0');
+
+  var p = sheet(ss, 'पेमेंट'); p.clear();
+  var pr = [['तारीख़', 'रकम (₹)', 'तरीका', 'UPI / Ref', 'नोट']].concat(pays.map(function (x) {
+    return [x.d, +x.a || 0, safe(x.m), safe(x.ref), safe(x.note)]; }));
+  p.getRange(1, 1, pr.length, 5).setNumberFormat('@').setValues(pr);
+  p.getRange(1, 2, pr.length, 1).setNumberFormat('0');
+}
+</script>
 <script id="main">
 (function(){
 "use strict";
@@ -147,7 +213,7 @@ function allMissing(){
 /* ---------- सेव ---------- */
 function writeLocal(){try{localStorage.setItem(LK,JSON.stringify(S));return true}catch(e){return false}}
 function save(){
-  S.t=Date.now(); var okLocal=writeLocal();
+  S.t=Date.now(); var okLocal=writeLocal(); queueSync();
   if(mode==='cloud'){dirty=true; saveState={k:'', t:'सेव हो रहा है…'}; schedule(900);}
   else if(mode==='local'||mode==='wait'){ if(mode==='wait') dirty=true;
     saveState=okLocal?{k:'good',t:'✓ इस फ़ोन में सेव हो गया'}:{k:'bad',t:'सेव नहीं हो पाया। नीचे "बैकअप" से तुरंत कॉपी कर लें।'}; }
@@ -273,6 +339,7 @@ function render(){
     +'<div class="row" style="flex:none"><span class="amt">'+rs(p.a)+'</span><button class="btn-ghost'+(confirmDel===p.id?' btn-danger':'')+'" data-del="'+esc(p.id)+'">'+(confirmDel===p.id?'पक्का हटाएँ?':'हटाएँ')+'</button>'+(confirmDel===p.id?'<button class="btn-ghost" data-cancel="1">रहने दें</button>':'')+'</div></div>'});
   h+='</div></section>';
 
+  h+=syncCard();
   h+='<section class="card"><details id="bk"'+(showBackup?' open':'')+'><summary>बैकअप (डेटा सुरक्षित रखें)</summary><div style="display:flex;flex-direction:column;gap:10px">'
    +'<p class="sub" style="margin:0">महीने में एक बार बैकअप फ़ाइल सेव कर लें या टेक्स्ट कॉपी करके अपने WhatsApp पर भेज दें।</p>'
    +'<div class="row">'+(dl?'<button class="grow" id="dlBtn">⬇️ बैकअप फ़ाइल सेव करें</button>':'')+'<button class="grow" id="bkCopy">बैकअप टेक्स्ट कॉपी करें</button></div>'
@@ -287,7 +354,7 @@ function render(){
   if(stTxt) h+='<p class="status '+(saveState.k||'')+'" role="status">'+esc(stTxt)+'</p>';
 
   var app=document.getElementById('app'), ae=document.activeElement, aid=ae&&ae.id, keep={};
-  ['pd','pa','pm','pr','pn','bkIn'].forEach(function(id){var el=document.getElementById(id); if(el) keep[id]=el.value});
+  ['pd','pa','pm','pr','pn','bkIn','syncUrl','syncKey'].forEach(function(id){var el=document.getElementById(id); if(el) keep[id]=el.value});
   var sc=window.scrollY;
   app.innerHTML=h;
   for(var id in keep){var el=document.getElementById(id); if(el&&keep[id]!=null&&!(id==='pd'&&!keep[id])) el.value=keep[id];}
@@ -333,10 +400,98 @@ document.addEventListener('submit',function(e){
 /* रात 12 बजे के बाद "आज" अपडेट हो */
 setInterval(function(){var n2=new Date(); if(n2.getDate()!==now.getDate()){var wasCur=view.y===now.getFullYear()&&view.m===now.getMonth(); now=n2; if(wasCur){view.y=now.getFullYear();view.m=now.getMonth()} render()}},60000);
 
-render();
 mode='local';
 dl={save:function(o){return new Promise(function(res,rej){try{var b=new Blob([o.data],{type:'application/json'}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=o.filename;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove()},1500);res()}catch(e){rej({code:'unavailable'})}})}};
+
+/* ---------- Google Sheet सिंक ---------- */
+var SK='parking-hisaab-sync';
+var sync={url:'',key:'',last:0,pending:false};
+try{var sv=JSON.parse(localStorage.getItem(SK)||'{}'); if(sv&&typeof sv==='object'){sync.url=String(sv.url||'');sync.key=String(sv.key||'');sync.last=+sv.last||0;sync.pending=!!sv.pending}}catch(e){}
+var syncMsg={k:'',t:''}, syncBusy=false, syncAgain=false, syncTimer=null, showSetup=false;
+function saveSyncCfg(){try{localStorage.setItem(SK,JSON.stringify(sync))}catch(e){}}
+function api(body){
+  body.key=sync.key;
+  var ctl=('AbortController' in window)?new AbortController():null, tm=ctl?setTimeout(function(){ctl.abort()},25000):null;
+  return fetch(sync.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow',signal:ctl?ctl.signal:undefined})
+   .then(function(r){return r.text()}).then(function(t){ if(tm) clearTimeout(tm); var j; try{j=JSON.parse(t)}catch(e){throw {code:'notjson'}} if(!j||!j.ok) throw {code:(j&&j.err)||'bad'}; return j})
+   .catch(function(e){ if(tm) clearTimeout(tm); throw (e&&e.code)?e:{code:'net'} });
+}
+function errText(c){
+  if(c==='key') return 'PIN मेल नहीं खा रहा। Sheet के कोड वाला PIN ही यहाँ डालें।';
+  if(c==='notjson') return 'Sheet का लिंक सही नहीं लग रहा, या "Who has access" में "Anyone" नहीं चुना। सेटअप फिर से जाँचें।';
+  if(c==='net') return navigator.onLine===false?'इंटरनेट नहीं है। डेटा फ़ोन में सुरक्षित है, नेट आते ही अपने-आप Sheet में चला जाएगा।':'Sheet तक नहीं पहुँच पाए। डेटा फ़ोन में सुरक्षित है, थोड़ी देर में फिर कोशिश होगी।';
+  return 'Sheet में सेव नहीं हो पाया। डेटा फ़ोन में सुरक्षित है।';
+}
+function adopt(remote,why){ var c=clean(remote); if(c.t>S.t){S=c; writeLocal(); say(why||'Sheet से नया डेटा आ गया।'); return true} return false }
+function queueSync(){ if(!sync.url) return; sync.pending=true; saveSyncCfg(); clearTimeout(syncTimer); syncTimer=setTimeout(push,1500) }
+function push(){
+  if(!sync.url||!sync.pending) return;
+  if(syncBusy){syncAgain=true;return}
+  syncBusy=true; syncMsg={k:'',t:'Sheet में सेव हो रहा है…'}; render();
+  var sentT=S.t;
+  api({action:'put',data:S}).then(function(j){
+    syncBusy=false;
+    if(j.stale&&j.data){ adopt(j.data,'दूसरे फ़ोन का नया डेटा Sheet में था, वो ले लिया।'); }
+    if(S.t===sentT||(j.stale)) sync.pending=false;
+    sync.last=Date.now(); saveSyncCfg(); syncMsg={k:'good',t:''}; render();
+    if(syncAgain||sync.pending){syncAgain=false; queueSync()}
+  },function(e){
+    syncBusy=false; syncAgain=false; syncMsg={k:'bad',t:errText(e.code)}; render();
+    if(e.code==='net'){clearTimeout(syncTimer); syncTimer=setTimeout(push,30000)}
+  });
+}
+function pull(cb){
+  if(!sync.url) return;
+  if(syncBusy){return}
+  syncBusy=true;
+  api({action:'get'}).then(function(j){
+    syncBusy=false; sync.last=Date.now(); syncMsg={k:'good',t:''};
+    var rt=(j.data&&+j.data.t)||0;
+    if(j.data&&rt>S.t){ adopt(j.data); sync.pending=false; }
+    else if(S.t>rt){ sync.pending=true; }
+    else sync.pending=false;
+    saveSyncCfg(); render(); if(sync.pending) push(); if(cb) cb(true);
+  },function(e){ syncBusy=false; syncMsg={k:'bad',t:errText(e.code)}; render(); if(cb) cb(false,e.code) });
+}
+function tm(ts){ if(!ts) return '—'; var d=new Date(ts); return d.getDate()+' '+MN[d.getMonth()]+', '+d.toLocaleTimeString('hi-IN',{hour:'numeric',minute:'2-digit'}) }
+function syncCard(){
+  var h='<section class="card"><h2>Google Sheet में बैकअप</h2>';
+  if(sync.url){
+    var st=syncBusy?'Sheet से जुड़ रहे हैं…':(syncMsg.k==='bad'?syncMsg.t:(sync.pending?'कुछ बदलाव अभी Sheet में जाने बाकी हैं…':'✓ सब Sheet में सेव है'));
+    h+='<p class="status '+(syncMsg.k==='bad'?'bad':(sync.pending||syncBusy?'':'good'))+'" style="text-align:left;margin:0">'+esc(st)+'</p>'
+     +'<p class="sub" style="margin:0">आख़िरी बार Sheet से जुड़ा: '+tm(sync.last)+'</p>'
+     +'<div class="row"><button class="grow" id="syncNow">अभी सिंक करें</button><button class="btn-ghost" id="syncOff">'+(confirmDel==='__sync'?'पक्का हटाएँ?':'Sheet हटाएँ')+'</button></div>';
+  } else {
+    h+='<p class="sub" style="margin:0">एक बार जोड़ दें, फिर हर बदलाव अपने-आप आपकी Google Sheet में भी सेव होगा। फ़ोन बदलने पर भी डेटा वापस मिलेगा।</p>'
+     +'<label>Sheet का Web app लिंक<input id="syncUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="'+esc(sync.url)+'"></label>'
+     +'<label>PIN<input id="syncKey" type="password" autocomplete="off" placeholder="कोड में जो PIN रखा"></label>'
+     +(syncMsg.k==='bad'&&syncMsg.t?'<p class="err" role="alert">'+esc(syncMsg.t)+'</p>':'')
+     +'<button class="btn-park" id="syncOn"'+(syncBusy?' disabled':'')+'>'+(syncBusy?'जाँच रहे हैं…':'जोड़ें और जाँचें')+'</button>';
+  }
+  h+='<details id="gsd"'+(showSetup?' open':'')+'><summary style="font-size:16px">Sheet सेटअप का कोड</summary><div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">'
+   +'<p class="sub" style="margin:0">यह कोड Google Sheet के Apps Script में पेस्ट करना है। PIN वाली लाइन बदलना न भूलें।</p>'
+   +'<button id="gsCopy">कोड कॉपी करें</button><textarea id="gsArea" readonly aria-label="Apps Script कोड">'+esc(document.getElementById('gscode').textContent)+'</textarea></div></details></section>';
+  return h;
+}
+document.addEventListener('click',function(e){
+  var b=e.target.closest('button'); if(!b||b.disabled) return;
+  if(b.id==='syncOn'){
+    var u=(document.getElementById('syncUrl').value||'').trim(), k=(document.getElementById('syncKey').value||'').trim();
+    if(!/^https:\/\/script\.google\.com\/macros\/s\/[^\s]+\/exec$/.test(u)){syncMsg={k:'bad',t:'लिंक ऐसा होना चाहिए: https://script.google.com/macros/s/…/exec'};render();return}
+    if(!k){syncMsg={k:'bad',t:'PIN डालें।'};render();return}
+    sync.url=u; sync.key=k; syncMsg={k:'',t:''}; render();
+    pull(function(ok){ if(ok){ saveSyncCfg(); say('✓ Google Sheet जुड़ गई। अब हर बदलाव वहाँ भी सेव होगा।') } else { var m=syncMsg; sync.url=''; sync.key=''; syncMsg=m; saveSyncCfg(); render() } });
+  }
+  else if(b.id==='syncNow'){ syncMsg={k:'',t:''}; pull() }
+  else if(b.id==='syncOff'){ if(confirmDel==='__sync'){ sync={url:'',key:'',last:0,pending:false}; saveSyncCfg(); confirmDel=null; syncMsg={k:'',t:''}; say('Sheet हटा दी। डेटा फ़ोन में और Sheet दोनों में बचा है।') } else {confirmDel='__sync'; render()} }
+  else if(b.id==='gsCopy'){ copyToClip(document.getElementById('gscode').textContent,'कोड कॉपी हो गया। अब Apps Script में पेस्ट करें।','gsArea') }
+});
+document.addEventListener('toggle',function(e){if(e.target.id==='gsd') showSetup=e.target.open},true);
+window.addEventListener('online',function(){ if(sync.url) pull() });
+document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible'&&sync.url&&Date.now()-sync.last>60000) pull() });
+
 render();
+if(sync.url) pull();
 })();
 </script>
 
